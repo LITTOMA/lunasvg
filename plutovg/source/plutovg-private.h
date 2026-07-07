@@ -3,6 +3,8 @@
 
 #include "plutovg.h"
 
+#include <stdint.h>
+
 #if defined(_WIN32)
 
 #include <windows.h>

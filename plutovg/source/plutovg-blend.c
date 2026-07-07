@@ -665,7 +665,7 @@ static void blend_solid(plutovg_surface_t* surface, plutovg_operator_t op, uint3
 static void blend_linear_gradient(plutovg_surface_t* surface, plutovg_operator_t op, const gradient_data_t* gradient, const plutovg_span_buffer_t* span_buffer)
 {
     composition_function_t func = composition_table[op];
-    unsigned int buffer[BUFFER_SIZE];
+    uint32_t buffer[BUFFER_SIZE];
 
     linear_gradient_values_t v;
     v.dx = gradient->values.linear.x2 - gradient->values.linear.x1;
@@ -699,7 +699,7 @@ static void blend_linear_gradient(plutovg_surface_t* surface, plutovg_operator_t
 static void blend_radial_gradient(plutovg_surface_t* surface, plutovg_operator_t op, const gradient_data_t* gradient, const plutovg_span_buffer_t* span_buffer)
 {
     composition_function_t func = composition_table[op];
-    unsigned int buffer[BUFFER_SIZE];
+    uint32_t buffer[BUFFER_SIZE];
 
     radial_gradient_values_t v;
     v.dx = gradient->values.radial.cx - gradient->values.radial.fx;
