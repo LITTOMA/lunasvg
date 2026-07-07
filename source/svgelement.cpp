@@ -1052,7 +1052,7 @@ void SVGClipPathElement::applyClipMask(SVGRenderState& state) const
 {
     if(state.hasCycleReference(this))
         return;
-    auto maskImage = Canvas::create(state.currentTransform().mapRect(state.paintBoundingBox()));
+    auto maskImage = state.canvas()->createCanvas(state.currentTransform().mapRect(state.paintBoundingBox()));
     auto currentTransform = state.currentTransform() * localTransform();
     if(m_clipPathUnits.value() == Units::ObjectBoundingBox) {
         auto bbox = state.fillBoundingBox();
@@ -1193,7 +1193,7 @@ void SVGMaskElement::applyMask(SVGRenderState& state) const
 {
     if(state.hasCycleReference(this))
         return;
-    auto maskImage = Canvas::create(state.currentTransform().mapRect(state.paintBoundingBox()));
+    auto maskImage = state.canvas()->createCanvas(state.currentTransform().mapRect(state.paintBoundingBox()));
     maskImage->clipRect(maskRect(state.element()), FillRule::NonZero, state.currentTransform());
 
     auto currentTransform = state.currentTransform();

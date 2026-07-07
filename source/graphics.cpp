@@ -488,206 +488,236 @@ float Font::measureText(const std::u32string_view& text) const
     return 0;
 }
 
+namespace {
+
+constexpr int kMaxCanvasSize = 1 << 15;
+
+class PlutoCanvas final : public Canvas {
+public:
+    PlutoCanvas(const Bitmap& bitmap)
+        : m_surface(plutovg_surface_reference(bitmap.surface()))
+        , m_canvas(plutovg_canvas_create(m_surface))
+        , m_translation({1, 0, 0, 1, 0, 0})
+        , m_x(0)
+        , m_y(0)
+    {
+    }
+
+    PlutoCanvas(int x, int y, int width, int height)
+        : m_surface(plutovg_surface_create(width, height))
+        , m_canvas(plutovg_canvas_create(m_surface))
+        , m_translation({1, 0, 0, 1, -static_cast<float>(x), -static_cast<float>(y)})
+        , m_x(x)
+        , m_y(y)
+    {
+    }
+
+    ~PlutoCanvas() override
+    {
+        plutovg_canvas_destroy(m_canvas);
+        plutovg_surface_destroy(m_surface);
+    }
+
+    std::shared_ptr<Canvas> createCanvas(const Bitmap& bitmap) const override
+    {
+        return Canvas::create(bitmap);
+    }
+
+    std::shared_ptr<Canvas> createCanvas(float x, float y, float width, float height) const override
+    {
+        return Canvas::create(x, y, width, height);
+    }
+
+    std::shared_ptr<Canvas> createCanvas(const Rect& extents) const override
+    {
+        return Canvas::create(extents);
+    }
+
+    void setColor(const Color& color) override
+    {
+        setColor(color.redF(), color.greenF(), color.blueF(), color.alphaF());
+    }
+
+    void setColor(float r, float g, float b, float a) override
+    {
+        plutovg_canvas_set_rgba(m_canvas, r, g, b, a);
+    }
+
+    void setLinearGradient(float x1, float y1, float x2, float y2, SpreadMethod spread, const GradientStops& stops, const Transform& transform) override
+    {
+        plutovg_canvas_set_linear_gradient(m_canvas, x1, y1, x2, y2, static_cast<plutovg_spread_method_t>(spread), stops.data(), stops.size(), &transform.matrix());
+    }
+
+    void setRadialGradient(float cx, float cy, float r, float fx, float fy, SpreadMethod spread, const GradientStops& stops, const Transform& transform) override
+    {
+        plutovg_canvas_set_radial_gradient(m_canvas, cx, cy, r, fx, fy, 0.f, static_cast<plutovg_spread_method_t>(spread), stops.data(), stops.size(), &transform.matrix());
+    }
+
+    void setTexture(const Canvas& source, TextureType type, float opacity, const Transform& transform) override
+    {
+        plutovg_canvas_set_texture(m_canvas, source.surface(), static_cast<plutovg_texture_type_t>(type), opacity, &transform.matrix());
+    }
+
+    void fillPath(const Path& path, FillRule fillRule, const Transform& transform) override
+    {
+        plutovg_canvas_set_matrix(m_canvas, &m_translation);
+        plutovg_canvas_transform(m_canvas, &transform.matrix());
+        plutovg_canvas_set_fill_rule(m_canvas, static_cast<plutovg_fill_rule_t>(fillRule));
+        plutovg_canvas_set_operator(m_canvas, PLUTOVG_OPERATOR_SRC_OVER);
+        plutovg_canvas_fill_path(m_canvas, path.data());
+    }
+
+    void strokePath(const Path& path, const StrokeData& strokeData, const Transform& transform) override
+    {
+        plutovg_canvas_set_matrix(m_canvas, &m_translation);
+        plutovg_canvas_transform(m_canvas, &transform.matrix());
+        plutovg_canvas_set_line_width(m_canvas, strokeData.lineWidth());
+        plutovg_canvas_set_miter_limit(m_canvas, strokeData.miterLimit());
+        plutovg_canvas_set_line_cap(m_canvas, static_cast<plutovg_line_cap_t>(strokeData.lineCap()));
+        plutovg_canvas_set_line_join(m_canvas, static_cast<plutovg_line_join_t>(strokeData.lineJoin()));
+        plutovg_canvas_set_dash_offset(m_canvas, strokeData.dashOffset());
+        plutovg_canvas_set_dash_array(m_canvas, strokeData.dashArray().data(), strokeData.dashArray().size());
+        plutovg_canvas_set_operator(m_canvas, PLUTOVG_OPERATOR_SRC_OVER);
+        plutovg_canvas_stroke_path(m_canvas, path.data());
+    }
+
+    void fillText(const std::u32string_view& text, const Font& font, const Point& origin, const Transform& transform) override
+    {
+        plutovg_canvas_set_matrix(m_canvas, &m_translation);
+        plutovg_canvas_transform(m_canvas, &transform.matrix());
+        plutovg_canvas_set_fill_rule(m_canvas, PLUTOVG_FILL_RULE_NON_ZERO);
+        plutovg_canvas_set_operator(m_canvas, PLUTOVG_OPERATOR_SRC_OVER);
+        plutovg_canvas_set_font(m_canvas, font.face().get(), font.size());
+        plutovg_canvas_fill_text(m_canvas, text.data(), text.length(), PLUTOVG_TEXT_ENCODING_UTF32, origin.x, origin.y);
+    }
+
+    void strokeText(const std::u32string_view& text, float strokeWidth, const Font& font, const Point& origin, const Transform& transform) override
+    {
+        plutovg_canvas_set_matrix(m_canvas, &m_translation);
+        plutovg_canvas_transform(m_canvas, &transform.matrix());
+        plutovg_canvas_set_line_width(m_canvas, strokeWidth);
+        plutovg_canvas_set_miter_limit(m_canvas, 4.f);
+        plutovg_canvas_set_line_cap(m_canvas, PLUTOVG_LINE_CAP_BUTT);
+        plutovg_canvas_set_line_join(m_canvas, PLUTOVG_LINE_JOIN_MITER);
+        plutovg_canvas_set_dash_offset(m_canvas, 0.f);
+        plutovg_canvas_set_dash_array(m_canvas, nullptr, 0);
+        plutovg_canvas_set_operator(m_canvas, PLUTOVG_OPERATOR_SRC_OVER);
+        plutovg_canvas_set_font(m_canvas, font.face().get(), font.size());
+        plutovg_canvas_stroke_text(m_canvas, text.data(), text.length(), PLUTOVG_TEXT_ENCODING_UTF32, origin.x, origin.y);
+    }
+
+    void clipPath(const Path& path, FillRule clipRule, const Transform& transform) override
+    {
+        plutovg_canvas_set_matrix(m_canvas, &m_translation);
+        plutovg_canvas_transform(m_canvas, &transform.matrix());
+        plutovg_canvas_set_fill_rule(m_canvas, static_cast<plutovg_fill_rule_t>(clipRule));
+        plutovg_canvas_clip_path(m_canvas, path.data());
+    }
+
+    void clipRect(const Rect& rect, FillRule clipRule, const Transform& transform) override
+    {
+        plutovg_canvas_set_matrix(m_canvas, &m_translation);
+        plutovg_canvas_transform(m_canvas, &transform.matrix());
+        plutovg_canvas_set_fill_rule(m_canvas, static_cast<plutovg_fill_rule_t>(clipRule));
+        plutovg_canvas_clip_rect(m_canvas, rect.x, rect.y, rect.w, rect.h);
+    }
+
+    void drawImage(const Bitmap& image, const Rect& dstRect, const Rect& srcRect, const Transform& transform) override
+    {
+        auto xScale = dstRect.w / srcRect.w;
+        auto yScale = dstRect.h / srcRect.h;
+        plutovg_matrix_t matrix = { xScale, 0, 0, yScale, -srcRect.x * xScale, -srcRect.y * yScale };
+        plutovg_canvas_set_matrix(m_canvas, &m_translation);
+        plutovg_canvas_transform(m_canvas, &transform.matrix());
+        plutovg_canvas_translate(m_canvas, dstRect.x, dstRect.y);
+        plutovg_canvas_set_fill_rule(m_canvas, PLUTOVG_FILL_RULE_NON_ZERO);
+        plutovg_canvas_set_operator(m_canvas, PLUTOVG_OPERATOR_SRC_OVER);
+        plutovg_canvas_set_texture(m_canvas, image.surface(), PLUTOVG_TEXTURE_TYPE_PLAIN, 1.f, &matrix);
+        plutovg_canvas_fill_rect(m_canvas, 0, 0, dstRect.w, dstRect.h);
+    }
+
+    void blendCanvas(const Canvas& canvas, BlendMode blendMode, float opacity) override
+    {
+        plutovg_matrix_t matrix = { 1, 0, 0, 1, static_cast<float>(canvas.x()), static_cast<float>(canvas.y()) };
+        plutovg_canvas_set_matrix(m_canvas, &m_translation);
+        plutovg_canvas_set_operator(m_canvas, static_cast<plutovg_operator_t>(blendMode));
+        plutovg_canvas_set_texture(m_canvas, canvas.surface(), PLUTOVG_TEXTURE_TYPE_PLAIN, opacity, &matrix);
+        plutovg_canvas_paint(m_canvas);
+    }
+
+    void save() override
+    {
+        plutovg_canvas_save(m_canvas);
+    }
+
+    void restore() override
+    {
+        plutovg_canvas_restore(m_canvas);
+    }
+
+    void convertToLuminanceMask() override
+    {
+        auto width = plutovg_surface_get_width(m_surface);
+        auto height = plutovg_surface_get_height(m_surface);
+        auto stride = plutovg_surface_get_stride(m_surface);
+        auto data = plutovg_surface_get_data(m_surface);
+        for(int y = 0; y < height; y++) {
+            auto pixels = reinterpret_cast<uint32_t*>(data + stride * y);
+            for(int x = 0; x < width; x++) {
+                auto pixel = pixels[x];
+                auto a = (pixel >> 24) & 0xFF;
+                auto r = (pixel >> 16) & 0xFF;
+                auto g = (pixel >> 8) & 0xFF;
+                auto b = (pixel >> 0) & 0xFF;
+                if(a) {
+                    r = (r * 255) / a;
+                    g = (g * 255) / a;
+                    b = (b * 255) / a;
+                }
+
+                auto l = (r * 0.2125 + g * 0.7154 + b * 0.0721);
+                pixels[x] = static_cast<uint32_t>(l * (a / 255.0)) << 24;
+            }
+        }
+    }
+
+    int x() const override { return m_x; }
+    int y() const override { return m_y; }
+    int width() const override { return plutovg_surface_get_width(m_surface); }
+    int height() const override { return plutovg_surface_get_height(m_surface); }
+
+    plutovg_surface_t* surface() const override { return m_surface; }
+    plutovg_canvas_t* canvas() const override { return m_canvas; }
+
+private:
+    plutovg_surface_t* m_surface;
+    plutovg_canvas_t* m_canvas;
+    plutovg_matrix_t m_translation;
+    const int m_x;
+    const int m_y;
+};
+
+} // namespace
+
 std::shared_ptr<Canvas> Canvas::create(const Bitmap& bitmap)
 {
-    return std::shared_ptr<Canvas>(new Canvas(bitmap));
+    return std::shared_ptr<Canvas>(new PlutoCanvas(bitmap));
 }
 
 std::shared_ptr<Canvas> Canvas::create(float x, float y, float width, float height)
 {
-    constexpr int kMaxSize = 1 << 15;
-    if(width <= 0 || height <= 0 || width >= kMaxSize || height >= kMaxSize)
-        return std::shared_ptr<Canvas>(new Canvas(0, 0, 1, 1));
+    if(width <= 0 || height <= 0 || width >= kMaxCanvasSize || height >= kMaxCanvasSize)
+        return std::shared_ptr<Canvas>(new PlutoCanvas(0, 0, 1, 1));
     auto l = static_cast<int>(std::floor(x));
     auto t = static_cast<int>(std::floor(y));
     auto r = static_cast<int>(std::ceil(x + width));
     auto b = static_cast<int>(std::ceil(y + height));
-    return std::shared_ptr<Canvas>(new Canvas(l, t, r - l, b - t));
+    return std::shared_ptr<Canvas>(new PlutoCanvas(l, t, r - l, b - t));
 }
 
 std::shared_ptr<Canvas> Canvas::create(const Rect& extents)
 {
     return create(extents.x, extents.y, extents.w, extents.h);
-}
-
-void Canvas::setColor(const Color& color)
-{
-    setColor(color.redF(), color.greenF(), color.blueF(), color.alphaF());
-}
-
-void Canvas::setColor(float r, float g, float b, float a)
-{
-    plutovg_canvas_set_rgba(m_canvas, r, g, b, a);
-}
-
-void Canvas::setLinearGradient(float x1, float y1, float x2, float y2, SpreadMethod spread, const GradientStops& stops, const Transform& transform)
-{
-    plutovg_canvas_set_linear_gradient(m_canvas, x1, y1, x2, y2, static_cast<plutovg_spread_method_t>(spread), stops.data(), stops.size(), &transform.matrix());
-}
-
-void Canvas::setRadialGradient(float cx, float cy, float r, float fx, float fy, SpreadMethod spread, const GradientStops& stops, const Transform& transform)
-{
-    plutovg_canvas_set_radial_gradient(m_canvas, cx, cy, r, fx, fy, 0.f, static_cast<plutovg_spread_method_t>(spread), stops.data(), stops.size(), &transform.matrix());
-}
-
-void Canvas::setTexture(const Canvas& source, TextureType type, float opacity, const Transform& transform)
-{
-    plutovg_canvas_set_texture(m_canvas, source.surface(), static_cast<plutovg_texture_type_t>(type), opacity, &transform.matrix());
-}
-
-void Canvas::fillPath(const Path& path, FillRule fillRule, const Transform& transform)
-{
-    plutovg_canvas_set_matrix(m_canvas, &m_translation);
-    plutovg_canvas_transform(m_canvas, &transform.matrix());
-    plutovg_canvas_set_fill_rule(m_canvas, static_cast<plutovg_fill_rule_t>(fillRule));
-    plutovg_canvas_set_operator(m_canvas, PLUTOVG_OPERATOR_SRC_OVER);
-    plutovg_canvas_fill_path(m_canvas, path.data());
-}
-
-void Canvas::strokePath(const Path& path, const StrokeData& strokeData, const Transform& transform)
-{
-    plutovg_canvas_set_matrix(m_canvas, &m_translation);
-    plutovg_canvas_transform(m_canvas, &transform.matrix());
-    plutovg_canvas_set_line_width(m_canvas, strokeData.lineWidth());
-    plutovg_canvas_set_miter_limit(m_canvas, strokeData.miterLimit());
-    plutovg_canvas_set_line_cap(m_canvas, static_cast<plutovg_line_cap_t>(strokeData.lineCap()));
-    plutovg_canvas_set_line_join(m_canvas, static_cast<plutovg_line_join_t>(strokeData.lineJoin()));
-    plutovg_canvas_set_dash_offset(m_canvas, strokeData.dashOffset());
-    plutovg_canvas_set_dash_array(m_canvas, strokeData.dashArray().data(), strokeData.dashArray().size());
-    plutovg_canvas_set_operator(m_canvas, PLUTOVG_OPERATOR_SRC_OVER);
-    plutovg_canvas_stroke_path(m_canvas, path.data());
-}
-
-void Canvas::fillText(const std::u32string_view& text, const Font& font, const Point& origin, const Transform& transform)
-{
-    plutovg_canvas_set_matrix(m_canvas, &m_translation);
-    plutovg_canvas_transform(m_canvas, &transform.matrix());
-    plutovg_canvas_set_fill_rule(m_canvas, PLUTOVG_FILL_RULE_NON_ZERO);
-    plutovg_canvas_set_operator(m_canvas, PLUTOVG_OPERATOR_SRC_OVER);
-    plutovg_canvas_set_font(m_canvas, font.face().get(), font.size());
-    plutovg_canvas_fill_text(m_canvas, text.data(), text.length(), PLUTOVG_TEXT_ENCODING_UTF32, origin.x, origin.y);
-}
-
-void Canvas::strokeText(const std::u32string_view& text, float strokeWidth, const Font& font, const Point& origin, const Transform& transform)
-{
-    plutovg_canvas_set_matrix(m_canvas, &m_translation);
-    plutovg_canvas_transform(m_canvas, &transform.matrix());
-    plutovg_canvas_set_line_width(m_canvas, strokeWidth);
-    plutovg_canvas_set_miter_limit(m_canvas, 4.f);
-    plutovg_canvas_set_line_cap(m_canvas, PLUTOVG_LINE_CAP_BUTT);
-    plutovg_canvas_set_line_join(m_canvas, PLUTOVG_LINE_JOIN_MITER);
-    plutovg_canvas_set_dash_offset(m_canvas, 0.f);
-    plutovg_canvas_set_dash_array(m_canvas, nullptr, 0);
-    plutovg_canvas_set_operator(m_canvas, PLUTOVG_OPERATOR_SRC_OVER);
-    plutovg_canvas_set_font(m_canvas, font.face().get(), font.size());
-    plutovg_canvas_stroke_text(m_canvas, text.data(), text.length(), PLUTOVG_TEXT_ENCODING_UTF32, origin.x, origin.y);
-}
-
-void Canvas::clipPath(const Path& path, FillRule clipRule, const Transform& transform)
-{
-    plutovg_canvas_set_matrix(m_canvas, &m_translation);
-    plutovg_canvas_transform(m_canvas, &transform.matrix());
-    plutovg_canvas_set_fill_rule(m_canvas, static_cast<plutovg_fill_rule_t>(clipRule));
-    plutovg_canvas_clip_path(m_canvas, path.data());
-}
-
-void Canvas::clipRect(const Rect& rect, FillRule clipRule, const Transform& transform)
-{
-    plutovg_canvas_set_matrix(m_canvas, &m_translation);
-    plutovg_canvas_transform(m_canvas, &transform.matrix());
-    plutovg_canvas_set_fill_rule(m_canvas, static_cast<plutovg_fill_rule_t>(clipRule));
-    plutovg_canvas_clip_rect(m_canvas, rect.x, rect.y, rect.w, rect.h);
-}
-
-void Canvas::drawImage(const Bitmap& image, const Rect& dstRect, const Rect& srcRect, const Transform& transform)
-{
-    auto xScale = dstRect.w / srcRect.w;
-    auto yScale = dstRect.h / srcRect.h;
-    plutovg_matrix_t matrix = { xScale, 0, 0, yScale, -srcRect.x * xScale, -srcRect.y * yScale };
-    plutovg_canvas_set_matrix(m_canvas, &m_translation);
-    plutovg_canvas_transform(m_canvas, &transform.matrix());
-    plutovg_canvas_translate(m_canvas, dstRect.x, dstRect.y);
-    plutovg_canvas_set_fill_rule(m_canvas, PLUTOVG_FILL_RULE_NON_ZERO);
-    plutovg_canvas_set_operator(m_canvas, PLUTOVG_OPERATOR_SRC_OVER);
-    plutovg_canvas_set_texture(m_canvas, image.surface(), PLUTOVG_TEXTURE_TYPE_PLAIN, 1.f, &matrix);
-    plutovg_canvas_fill_rect(m_canvas, 0, 0, dstRect.w, dstRect.h);
-}
-
-void Canvas::blendCanvas(const Canvas& canvas, BlendMode blendMode, float opacity)
-{
-    plutovg_matrix_t matrix = { 1, 0, 0, 1, static_cast<float>(canvas.x()), static_cast<float>(canvas.y()) };
-    plutovg_canvas_set_matrix(m_canvas, &m_translation);
-    plutovg_canvas_set_operator(m_canvas, static_cast<plutovg_operator_t>(blendMode));
-    plutovg_canvas_set_texture(m_canvas, canvas.surface(), PLUTOVG_TEXTURE_TYPE_PLAIN, opacity, &matrix);
-    plutovg_canvas_paint(m_canvas);
-}
-
-void Canvas::save()
-{
-    plutovg_canvas_save(m_canvas);
-}
-
-void Canvas::restore()
-{
-    plutovg_canvas_restore(m_canvas);
-}
-
-int Canvas::width() const
-{
-    return plutovg_surface_get_width(m_surface);
-}
-
-int Canvas::height() const
-{
-    return plutovg_surface_get_height(m_surface);
-}
-
-void Canvas::convertToLuminanceMask()
-{
-    auto width = plutovg_surface_get_width(m_surface);
-    auto height = plutovg_surface_get_height(m_surface);
-    auto stride = plutovg_surface_get_stride(m_surface);
-    auto data = plutovg_surface_get_data(m_surface);
-    for(int y = 0; y < height; y++) {
-        auto pixels = reinterpret_cast<uint32_t*>(data + stride * y);
-        for(int x = 0; x < width; x++) {
-            auto pixel = pixels[x];
-            auto a = (pixel >> 24) & 0xFF;
-            auto r = (pixel >> 16) & 0xFF;
-            auto g = (pixel >> 8) & 0xFF;
-            auto b = (pixel >> 0) & 0xFF;
-            if(a) {
-                r = (r * 255) / a;
-                g = (g * 255) / a;
-                b = (b * 255) / a;
-            }
-
-            auto l = (r * 0.2125 + g * 0.7154 + b * 0.0721);
-            pixels[x] = static_cast<uint32_t>(l * (a / 255.0)) << 24;
-        }
-    }
-}
-
-Canvas::~Canvas()
-{
-    plutovg_canvas_destroy(m_canvas);
-    plutovg_surface_destroy(m_surface);
-}
-
-Canvas::Canvas(const Bitmap& bitmap)
-    : m_surface(plutovg_surface_reference(bitmap.surface()))
-    , m_canvas(plutovg_canvas_create(m_surface))
-    , m_translation({1, 0, 0, 1, 0, 0})
-    , m_x(0), m_y(0)
-{
-}
-
-Canvas::Canvas(int x, int y, int width, int height)
-    : m_surface(plutovg_surface_create(width, height))
-    , m_canvas(plutovg_canvas_create(m_surface))
-    , m_translation({1, 0, 0, 1, -static_cast<float>(x), -static_cast<float>(y)})
-    , m_x(x), m_y(y)
-{
 }
 
 } // namespace lunasvg

@@ -470,6 +470,7 @@ public:
 class SVGNode;
 class SVGTextNode;
 class SVGElement;
+class Canvas;
 
 class Element;
 class TextNode;
@@ -607,6 +608,13 @@ public:
     void render(Bitmap& bitmap, const Matrix& matrix = Matrix()) const;
 
     /**
+     * @brief Renders the element using a caller-supplied canvas backend.
+     * @param canvas The rendering canvas to use.
+     * @param matrix The root transformation matrix.
+     */
+    void render(std::shared_ptr<Canvas> canvas, const Matrix& matrix = Matrix()) const;
+
+    /**
      * @brief Renders the element to a bitmap with specified dimensions.
      * @param width The desired width in pixels, or -1 to auto-scale based on the intrinsic size.
      * @param height The desired height in pixels, or -1 to auto-scale based on the intrinsic size.
@@ -661,6 +669,7 @@ private:
 using ElementList = std::vector<Element>;
 
 class SVGRootElement;
+class Canvas;
 
 class LUNASVG_API Document {
 public:
@@ -740,6 +749,13 @@ public:
      * @param The root transformation matrix.
      */
     void render(Bitmap& bitmap, const Matrix& matrix = Matrix()) const;
+
+    /**
+     * @brief Renders the document using a caller-supplied canvas backend.
+     * @param canvas The rendering canvas to use.
+     * @param matrix The root transformation matrix.
+     */
+    void render(std::shared_ptr<Canvas> canvas, const Matrix& matrix = Matrix()) const;
 
     /**
      * @brief Renders the document to a bitmap with specified dimensions.

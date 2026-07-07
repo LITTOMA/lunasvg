@@ -512,49 +512,44 @@ public:
     static std::shared_ptr<Canvas> create(float x, float y, float width, float height);
     static std::shared_ptr<Canvas> create(const Rect& extents);
 
-    void setColor(const Color& color);
-    void setColor(float r, float g, float b, float a);
-    void setLinearGradient(float x1, float y1, float x2, float y2, SpreadMethod spread, const GradientStops& stops, const Transform& transform);
-    void setRadialGradient(float cx, float cy, float r, float fx, float fy, SpreadMethod spread, const GradientStops& stops, const Transform& transform);
-    void setTexture(const Canvas& source, TextureType type, float opacity, const Transform& transform);
+    virtual ~Canvas() = default;
 
-    void fillPath(const Path& path, FillRule fillRule, const Transform& transform);
-    void strokePath(const Path& path, const StrokeData& strokeData, const Transform& transform);
+    virtual std::shared_ptr<Canvas> createCanvas(const Bitmap& bitmap) const = 0;
+    virtual std::shared_ptr<Canvas> createCanvas(float x, float y, float width, float height) const = 0;
+    virtual std::shared_ptr<Canvas> createCanvas(const Rect& extents) const = 0;
 
-    void fillText(const std::u32string_view& text, const Font& font, const Point& origin, const Transform& transform);
-    void strokeText(const std::u32string_view& text, float strokeWidth, const Font& font, const Point& origin, const Transform& transform);
+    virtual void setColor(const Color& color) = 0;
+    virtual void setColor(float r, float g, float b, float a) = 0;
+    virtual void setLinearGradient(float x1, float y1, float x2, float y2, SpreadMethod spread, const GradientStops& stops, const Transform& transform) = 0;
+    virtual void setRadialGradient(float cx, float cy, float r, float fx, float fy, SpreadMethod spread, const GradientStops& stops, const Transform& transform) = 0;
+    virtual void setTexture(const Canvas& source, TextureType type, float opacity, const Transform& transform) = 0;
 
-    void clipPath(const Path& path, FillRule clipRule, const Transform& transform);
-    void clipRect(const Rect& rect, FillRule clipRule, const Transform& transform);
+    virtual void fillPath(const Path& path, FillRule fillRule, const Transform& transform) = 0;
+    virtual void strokePath(const Path& path, const StrokeData& strokeData, const Transform& transform) = 0;
 
-    void drawImage(const Bitmap& image, const Rect& dstRect, const Rect& srcRect, const Transform& transform);
-    void blendCanvas(const Canvas& canvas, BlendMode blendMode, float opacity);
+    virtual void fillText(const std::u32string_view& text, const Font& font, const Point& origin, const Transform& transform) = 0;
+    virtual void strokeText(const std::u32string_view& text, float strokeWidth, const Font& font, const Point& origin, const Transform& transform) = 0;
 
-    void save();
-    void restore();
+    virtual void clipPath(const Path& path, FillRule clipRule, const Transform& transform) = 0;
+    virtual void clipRect(const Rect& rect, FillRule clipRule, const Transform& transform) = 0;
 
-    void convertToLuminanceMask();
+    virtual void drawImage(const Bitmap& image, const Rect& dstRect, const Rect& srcRect, const Transform& transform) = 0;
+    virtual void blendCanvas(const Canvas& canvas, BlendMode blendMode, float opacity) = 0;
 
-    int x() const { return m_x; }
-    int y() const { return m_y; }
-    int width() const;
-    int height() const;
+    virtual void save() = 0;
+    virtual void restore() = 0;
 
-    Rect extents() const { return Rect(m_x, m_y, width(), height()); }
+    virtual void convertToLuminanceMask() = 0;
 
-    plutovg_surface_t* surface() const { return m_surface; }
-    plutovg_canvas_t* canvas() const { return m_canvas; }
+    virtual int x() const = 0;
+    virtual int y() const = 0;
+    virtual int width() const = 0;
+    virtual int height() const = 0;
 
-    ~Canvas();
+    Rect extents() const { return Rect(x(), y(), width(), height()); }
 
-private:
-    Canvas(const Bitmap& bitmap);
-    Canvas(int x, int y, int width, int height);
-    plutovg_surface_t* m_surface;
-    plutovg_canvas_t* m_canvas;
-    plutovg_matrix_t m_translation;
-    const int m_x;
-    const int m_y;
+    virtual plutovg_surface_t* surface() const { return nullptr; }
+    virtual plutovg_canvas_t* canvas() const { return nullptr; }
 };
 
 } // namespace lunasvg
