@@ -97,7 +97,7 @@ static inline uint32_t BYTE_MUL(uint32_t x, uint32_t a)
 
 #include <emmintrin.h>
 
-void plutovg_memfill32(unsigned int* dest, int length, unsigned int value)
+void plutovg_memfill32(uint32_t* dest, int length, uint32_t value)
 {
     __m128i vector_data = _mm_set_epi32(value, value, value, value);
     while(length && ((uintptr_t)dest & 0xf)) {
@@ -152,7 +152,7 @@ void plutovg_memfill32(unsigned int* dest, int length, unsigned int value)
 
 #else
 
-void plutovg_memfill32(unsigned int* dest, int length, unsigned int value)
+void plutovg_memfill32(uint32_t* dest, int length, uint32_t value)
 {
     while(length--) {
         *dest++ = value;
